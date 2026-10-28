@@ -46,3 +46,26 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Secrets & environment
+# Firebase config is generated per-developer by `flutterfire configure`.
+lib/firebase_options.dart
+**/google-services.json
+**/GoogleService-Info.plist
+**/firebase_app_id_file.json
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.p8
+*.keystore
+*.jks
+key.properties
+service-account*.json
+
+# Firebase CLI
+.firebase/
+firebase-debug*.log
+firestore-debug.log
+ui-debug.log

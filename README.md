@@ -23,7 +23,7 @@ export PATH="$ANDROID_HOME/platform-tools:$PATH"
    flutterfire configure --platforms=android,ios
    firebase deploy --only firestore:rules
    ```
-   `flutterfire configure` replaces the placeholder `lib/firebase_options.dart`. You can also paste `firestore.rules` into the console under Firestore → Rules instead of running the deploy command.
+   `flutterfire configure` generates `lib/firebase_options.dart` and `android/app/google-services.json`. Both are gitignored, so every fresh clone must run it. You can also paste `firestore.rules` into the console under Firestore → Rules instead of running the deploy command.
 
 ## Run / build
 
