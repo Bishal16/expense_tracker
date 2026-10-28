@@ -16,6 +16,14 @@
             "ios": "1:692556930468:ios:e011121ff58d7510e07531"
           }
         }
+      },
+      "ios": {
+        "default": {
+          "projectId": "expensetracker-f38d4",
+          "appId": "1:692556930468:ios:e011121ff58d7510e07531",
+          "uploadDebugSymbols": false,
+          "fileOutput": "ios/Runner/GoogleService-Info.plist"
+        }
       }
     }
   },
