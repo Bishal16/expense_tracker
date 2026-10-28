@@ -1,0 +1,55 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Keep in sync with adminEmail in lib/config.dart.
+    function isAdmin() {
+      return request.auth != null
+          && request.auth.token.email == 'mahathirbishal@gmail.com';
+    }
+
+    // The admin, or anyone the admin has approved in the admin panel.
+    function isMember() {
+      return isAdmin() || (request.auth != null
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'approved');
+    }
+
+    function onlyChanges(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+
+    // Access requests. Users can only ask; the admin decides.
+    match /users/{uid} {
+      allow read: if isAdmin() || (request.auth != null && request.auth.uid == uid);
+      allow create: if request.auth != null && request.auth.uid == uid
+          && request.resource.data.status == 'pending'
+          && request.resource.data.email == request.auth.token.email;
+      allow update, delete: if isAdmin();
+    }
+
+    // One shared expense list.
+    match /expenses/{id} {
+      allow read: if isMember();
+
+      allow create: if isMember()
+          && request.resource.data.paid == false
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.amount is number;
+
+      // Admin can change anything. A member can edit their own unpaid
+      // expenses, and mark any unpaid expense as paid.
+      allow update: if isAdmin()
+          || (isMember() && resource.data.paid == false && (
+                (resource.data.createdBy == request.auth.uid
+                    && onlyChanges(['name', 'qty', 'amount', 'date']))
+             || (request.resource.data.paid == true
+                    && request.resource.data.paidBy == request.auth.token.email
+                    && onlyChanges(['paid', 'paidAt', 'paidBy', 'paymentId']))
+          ));
+
+      // Admin can delete anything; members only their own unpaid expenses.
+      allow delete: if isAdmin()
+          || (isMember() && resource.data.paid == false
+              && resource.data.createdBy == request.auth.uid);
+    }
+  }
+}
