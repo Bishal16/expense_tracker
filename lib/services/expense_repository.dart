@@ -42,6 +42,23 @@ class ExpenseRepository {
 
   Future<void> delete(String id) => _expenses.doc(id).delete();
 
+  /// Up to [limit] distinct names from the most recent expenses, for
+  /// one-tap entry in the add form.
+  Future<List<String>> recentNames({int limit = 8}) async {
+    final snap = await _expenses
+        .orderBy('date', descending: true)
+        .limit(60)
+        .get();
+    final seen = <String>{};
+    final names = <String>[];
+    for (final doc in snap.docs) {
+      final name = (doc.data()['name'] as String?)?.trim() ?? '';
+      if (name.isNotEmpty && seen.add(name.toLowerCase())) names.add(name);
+      if (names.length == limit) break;
+    }
+    return names;
+  }
+
   /// Every expense, paid or not. Used by the admin panel.
   Stream<List<Expense>> watchAll() => _expenses.snapshots().map(
     (snap) => snap.docs.map(Expense.fromDoc).toList(),

@@ -1,11 +1,14 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import '../format.dart';
 import '../models/expense.dart';
 import '../services/csv_export.dart';
 import '../services/expense_repository.dart';
+import '../theme.dart';
+import '../widgets/ui.dart';
 import 'expense_form.dart';
 
 /// Paid expenses, grouped by the payment they were marked paid in.
@@ -84,92 +87,193 @@ class HistoryScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Paid history')),
-      body: StreamBuilder<List<Expense>>(
-        stream: repo.watchPaid(),
-        builder: (context, snap) {
-          if (snap.hasError) return Center(child: Text('Error: ${snap.error}'));
-          if (!snap.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final groups = _groupByPayment(snap.data!);
-          if (groups.isEmpty) {
-            return const Center(child: Text('No payments yet'));
-          }
-          return ListView(
-            padding: const EdgeInsets.all(12),
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-                child: Text(
-                  'Total paid: ${taka(totalOf(snap.data!))}',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
-              for (final g in groups) _paymentCard(context, g),
-            ],
-          );
-        },
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light,
+      child: GradientBackground(
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          body: StreamBuilder<List<Expense>>(
+            stream: repo.watchPaid(),
+            builder: (context, snap) {
+              final paid = snap.data ?? const <Expense>[];
+              final groups = _groupByPayment(paid);
+              return CustomScrollView(
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: PageHeader(
+                      title: 'Paid history',
+                      caption: 'Total paid',
+                      figure: snap.hasData ? taka(totalOf(paid)) : '—',
+                    ),
+                  ),
+                  if (snap.hasError)
+                    SliverFillRemaining(
+                      child: Center(child: Text('Error: ${snap.error}')),
+                    )
+                  else if (!snap.hasData)
+                    const SliverFillRemaining(
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (groups.isEmpty)
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: _empty(context),
+                    )
+                  else
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
+                      sliver: SliverList.separated(
+                        itemCount: groups.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 14),
+                        itemBuilder: (context, i) =>
+                            _paymentCard(context, groups[i]),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _empty(BuildContext context) {
+    final style = context.style;
+    return Padding(
+      padding: const EdgeInsets.all(40),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.receipt_long_rounded, size: 64, color: style.accent),
+          const SizedBox(height: 12),
+          Text(
+            'No payments yet',
+            style: Theme.of(context).textTheme.titleLarge
+                ?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Paid expenses will show up here.',
+            style: TextStyle(color: Colors.black54),
+          ),
+        ],
       ),
     );
   }
 
   Widget _paymentCard(BuildContext context, List<Expense> group) {
+    final style = context.style;
+    final text = Theme.of(context).textTheme;
     final first = group.first;
     final paidAt = first.paidAt ?? first.date;
-    return Card(
+    return SoftCard(
+      padding: EdgeInsets.zero,
       child: Column(
         children: [
-          ListTile(
-            leading: const Icon(Icons.check_circle, color: Colors.green),
-            title: Text(
-              'Paid ${DateFormat.yMMMd().add_jm().format(paidAt)}',
-              style: const TextStyle(fontWeight: FontWeight.bold),
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 14, 4, 14),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  style.header.first.withValues(alpha: 0.18),
+                  style.header.last.withValues(alpha: 0.18),
+                ],
+              ),
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(style.playful ? 24 : 18),
+              ),
             ),
-            subtitle: Text(
-              'by ${shortName(first.paidBy)}'
-              ' · ${group.length} item${group.length == 1 ? '' : 's'}',
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
+            child: Row(
               children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.verified_rounded,
+                    color: Colors.green.shade600,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        dayLabel(paidAt),
+                        style: text.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      Text(
+                        '${DateFormat.jm().format(paidAt)}'
+                        ' · by ${shortName(first.paidBy)}'
+                        ' · ${group.length} item${group.length == 1 ? '' : 's'}',
+                        style: text.bodySmall?.copyWith(color: Colors.black54),
+                      ),
+                    ],
+                  ),
+                ),
                 Text(
                   taka(totalOf(group)),
-                  style: Theme.of(context).textTheme.titleMedium,
+                  style: text.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: style.accent,
+                  ),
                 ),
                 if (isAdmin)
                   PopupMenuButton<void>(
+                    icon: const Icon(Icons.more_vert_rounded),
                     itemBuilder: (_) => [
                       PopupMenuItem(
                         onTap: () => _undoPayment(context, group),
-                        child: const Text('Mark all unpaid'),
+                        child: const ListTile(
+                          leading: Icon(Icons.undo_rounded),
+                          title: Text('Mark all unpaid'),
+                        ),
                       ),
                       PopupMenuItem(
                         onTap: () => shareExpensesCsv(
                           group,
                           'payment_${fileStamp(paidAt)}',
                         ),
-                        child: const Text('Export CSV'),
+                        child: const ListTile(
+                          leading: Icon(Icons.file_download_outlined),
+                          title: Text('Export CSV'),
+                        ),
                       ),
                       PopupMenuItem(
                         onTap: () => _deletePayment(context, group),
-                        child: const Text('Delete payment'),
+                        child: const ListTile(
+                          leading: Icon(Icons.delete_outline_rounded),
+                          title: Text('Delete payment'),
+                        ),
                       ),
                     ],
-                  ),
+                  )
+                else
+                  const SizedBox(width: 12),
               ],
             ),
           ),
-          const Divider(height: 1),
           for (final e in group)
             ListTile(
               dense: true,
-              title: Text(e.name),
-              subtitle: Text(
-                'Qty ${qty(e.qty)} · ${DateFormat.yMMMd().format(e.date)}',
+              leading: InitialAvatar(name: e.name),
+              title: Text(
+                e.name,
+                style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700),
               ),
-              trailing: Text(taka(e.amount)),
+              subtitle: Text(
+                'Qty ${qty(e.qty)} · ${DateFormat.MMMd().format(e.date)}',
+              ),
+              trailing: Text(
+                taka(e.amount),
+                style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
               onTap: isAdmin
                   ? () => showExpenseForm(
                       context,
@@ -180,6 +284,7 @@ class HistoryScreen extends StatelessWidget {
                     )
                   : null,
             ),
+          const SizedBox(height: 6),
         ],
       ),
     );

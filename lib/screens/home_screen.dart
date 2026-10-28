@@ -1,12 +1,14 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+import 'package:flutter/services.dart';
 
 import '../config.dart';
 import '../format.dart';
 import '../models/expense.dart';
 import '../services/auth_service.dart';
 import '../services/expense_repository.dart';
+import '../theme.dart';
+import '../widgets/ui.dart';
 import 'admin_screen.dart';
 import 'expense_form.dart';
 import 'history_screen.dart';
@@ -30,11 +32,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   bool _canEdit(Expense e) => _isAdmin || e.createdBy == widget.user.uid;
 
-  void _toggle(Expense e) => setState(
-    () => _selected.contains(e.id)
-        ? _selected.remove(e.id)
-        : _selected.add(e.id!),
-  );
+  void _toggle(Expense e) {
+    HapticFeedback.selectionClick();
+    setState(
+      () => _selected.contains(e.id)
+          ? _selected.remove(e.id)
+          : _selected.add(e.id!),
+    );
+  }
 
   void _open(Expense e) => showExpenseForm(
     context,
@@ -51,14 +56,23 @@ class _HomeScreenState extends State<HomeScreen> {
     isAdmin: _isAdmin,
   );
 
+  void _push(Widget page) =>
+      Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+
   Future<void> _markPaid(List<Expense> chosen) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        icon: Icon(
+          Icons.verified_rounded,
+          color: context.style.accent,
+          size: 40,
+        ),
         title: const Text('Mark as paid?'),
         content: Text(
           '${chosen.length} expense${chosen.length == 1 ? '' : 's'}'
           ' totalling ${taka(totalOf(chosen))} will move to paid history.',
+          textAlign: TextAlign.center,
         ),
         actions: [
           TextButton(
@@ -67,6 +81,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(minimumSize: const Size(120, 48)),
             child: const Text('Mark paid'),
           ),
         ],
@@ -75,7 +90,17 @@ class _HomeScreenState extends State<HomeScreen> {
     if (ok != true) return;
     try {
       await _repo.markPaid(chosen.map((e) => e.id!), widget.user.email);
+      HapticFeedback.mediumImpact();
       setState(_selected.clear);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Paid ${taka(totalOf(chosen))} ${context.style.emoji}',
+            ),
+          ),
+        );
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -100,158 +125,343 @@ class _HomeScreenState extends State<HomeScreen> {
           onPopInvokedWithResult: (didPop, _) {
             if (!didPop) setState(_selected.clear);
           },
-          child: Scaffold(
-            appBar: selecting
-                ? AppBar(
-                    leading: IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => setState(_selected.clear),
-                    ),
-                    title: Text('${chosen.length} selected'),
-                    actions: [
-                      TextButton(
-                        onPressed: () => setState(
-                          () => _selected.addAll(expenses.map((e) => e.id!)),
-                        ),
-                        child: const Text('Select all'),
+          child: AnnotatedRegion<SystemUiOverlayStyle>(
+            value: SystemUiOverlayStyle.light,
+            child: GradientBackground(
+              child: Scaffold(
+                backgroundColor: Colors.transparent,
+                floatingActionButton: selecting
+                    ? null
+                    : GradientButton(
+                        label: 'Add expense',
+                        icon: Icons.add_rounded,
+                        onPressed: _add,
                       ),
-                    ],
-                  )
-                : AppBar(
-                    title: const Text('Unpaid'),
-                    actions: [
-                      if (_isAdmin)
-                        IconButton(
-                          icon: const Icon(Icons.admin_panel_settings),
-                          tooltip: 'Admin panel',
-                          onPressed: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) =>
-                                  AdminScreen(repo: _repo, user: widget.user),
-                            ),
-                          ),
-                        ),
-                      IconButton(
-                        icon: const Icon(Icons.history),
-                        tooltip: 'Paid history',
-                        onPressed: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => HistoryScreen(
-                              repo: _repo,
-                              user: widget.user,
-                              isAdmin: _isAdmin,
-                            ),
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.logout),
-                        tooltip: 'Sign out (${widget.user.email})',
-                        onPressed: widget.auth.signOut,
-                      ),
-                    ],
-                  ),
-            floatingActionButton: selecting
-                ? null
-                : FloatingActionButton.extended(
-                    onPressed: _add,
-                    icon: const Icon(Icons.add),
-                    label: const Text('Add'),
-                  ),
-            bottomNavigationBar: selecting
-                ? SafeArea(
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: FilledButton.icon(
-                        onPressed: () => _markPaid(chosen),
-                        icon: const Icon(Icons.check_circle),
-                        label: Text('Mark paid · ${taka(totalOf(chosen))}'),
-                      ),
-                    ),
-                  )
-                : null,
-            body: _body(snap, expenses),
+                bottomNavigationBar: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  child: selecting
+                      ? _selectionBar(expenses, chosen)
+                      : const SizedBox.shrink(),
+                ),
+                body: CustomScrollView(
+                  slivers: [
+                    SliverToBoxAdapter(child: _header(snap, expenses)),
+                    ..._body(snap, expenses),
+                  ],
+                ),
+              ),
+            ),
           ),
         );
       },
     );
   }
 
-  Widget _body(AsyncSnapshot<List<Expense>> snap, List<Expense> expenses) {
-    if (snap.hasError) return Center(child: Text('Error: ${snap.error}'));
-    if (!snap.hasData) return const Center(child: CircularProgressIndicator());
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-      children: [
-        Card(
-          color: Theme.of(context).colorScheme.primaryContainer,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Total remaining',
-                  style: Theme.of(context).textTheme.labelLarge,
+  Widget _header(AsyncSnapshot<List<Expense>> snap, List<Expense> expenses) {
+    final style = context.style;
+    final text = Theme.of(context).textTheme;
+    final name = _isAdmin ? 'Admin' : friendlyName(widget.user.email);
+    return GradientHeader(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      timeGreeting(),
+                      style: text.bodyMedium?.copyWith(color: Colors.white70),
+                    ),
+                    Text(
+                      'Hi, $name ${style.emoji}',
+                      style: style
+                          .greeting(style.playful ? 34 : 26)
+                          .copyWith(color: Colors.white),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  taka(totalOf(expenses)),
-                  style: Theme.of(context).textTheme.headlineMedium,
+              ),
+              if (_isAdmin)
+                HeaderIconButton(
+                  icon: Icons.admin_panel_settings_rounded,
+                  tooltip: 'Admin panel',
+                  onPressed: () =>
+                      _push(AdminScreen(repo: _repo, user: widget.user)),
                 ),
-                Text(
-                  '${expenses.length} unpaid'
-                  ' expense${expenses.length == 1 ? '' : 's'}',
+              HeaderIconButton(
+                icon: Icons.history_rounded,
+                tooltip: 'Paid history',
+                onPressed: () => _push(
+                  HistoryScreen(
+                    repo: _repo,
+                    user: widget.user,
+                    isAdmin: _isAdmin,
+                  ),
                 ),
-              ],
+              ),
+              HeaderIconButton(
+                icon: Icons.logout_rounded,
+                tooltip: 'Sign out (${widget.user.email})',
+                onPressed: widget.auth.signOut,
+              ),
+            ],
+          ),
+          const SizedBox(height: 28),
+          Text(
+            'Total remaining',
+            style: text.titleSmall?.copyWith(color: Colors.white70),
+          ),
+          const SizedBox(height: 4),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            transitionBuilder: (child, anim) => FadeTransition(
+              opacity: anim,
+              child: ScaleTransition(
+                scale: Tween(begin: 0.9, end: 1.0).animate(anim),
+                child: child,
+              ),
+            ),
+            child: Text(
+              snap.hasData ? taka(totalOf(expenses)) : '—',
+              key: ValueKey(totalOf(expenses)),
+              style: text.displaySmall?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
-        ),
-        if (expenses.isEmpty)
-          const Padding(
-            padding: EdgeInsets.only(top: 48),
-            child: Center(child: Text('Nothing unpaid 🎉')),
-          )
-        else
-          const Padding(
-            padding: EdgeInsets.fromLTRB(4, 12, 4, 0),
-            child: Text('Tap the circle to select expenses to mark paid.'),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              '${expenses.length} unpaid'
+              ' expense${expenses.length == 1 ? '' : 's'}',
+              style: text.labelLarge?.copyWith(color: Colors.white),
+            ),
           ),
-        for (final e in expenses) _tile(e),
-      ],
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _body(
+    AsyncSnapshot<List<Expense>> snap,
+    List<Expense> expenses,
+  ) {
+    if (snap.hasError) {
+      return [
+        SliverFillRemaining(child: Center(child: Text('Error: ${snap.error}'))),
+      ];
+    }
+    if (!snap.hasData) {
+      return [
+        const SliverFillRemaining(
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      ];
+    }
+    if (expenses.isEmpty) {
+      return [SliverFillRemaining(hasScrollBody: false, child: _empty())];
+    }
+
+    // Group by day; the list is already newest first.
+    final days = <String, List<Expense>>{};
+    for (final e in expenses) {
+      days.putIfAbsent(dayLabel(e.date), () => []).add(e);
+    }
+    final text = Theme.of(context).textTheme;
+    return [
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 110),
+        sliver: SliverList.list(
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 4),
+              child: Text(
+                'Tap a circle to select · long-press works too',
+                style: text.bodySmall?.copyWith(color: Colors.black45),
+              ),
+            ),
+            for (final day in days.entries) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 14, 4, 8),
+                child: Row(
+                  children: [
+                    Text(
+                      day.key,
+                      style: text.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      taka(totalOf(day.value)),
+                      style: text.labelLarge?.copyWith(color: Colors.black54),
+                    ),
+                  ],
+                ),
+              ),
+              for (final e in day.value)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _tile(e),
+                ),
+            ],
+          ],
+        ),
+      ),
+    ];
+  }
+
+  Widget _empty() {
+    final style = context.style;
+    final text = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(32, 40, 32, 120),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 120,
+            height: 120,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                colors: [
+                  style.header.first.withValues(alpha: 0.25),
+                  style.header.last.withValues(alpha: 0.25),
+                ],
+              ),
+            ),
+            child: Icon(style.motif, size: 56, color: style.accent),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            style.playful ? 'All clear, lovely! 🎀' : 'All settled 🎉',
+            style: text.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Nothing unpaid right now.\nTap “Add expense” to record a new one.',
+            textAlign: TextAlign.center,
+            style: text.bodyMedium?.copyWith(color: Colors.black54),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _tile(Expense e) {
     final selected = _selected.contains(e.id);
     final selecting = _selected.isNotEmpty;
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-      selected: selected,
-      leading: IconButton(
-        icon: Icon(
-          selected ? Icons.check_circle : Icons.radio_button_unchecked,
-        ),
-        onPressed: () => _toggle(e),
-      ),
-      title: Text(e.name),
-      subtitle: Text(
-        'Qty ${qty(e.qty)} · ${DateFormat.yMMMd().format(e.date)}',
-      ),
-      trailing: Text(
-        taka(e.amount),
-        style: Theme.of(context).textTheme.titleMedium,
-      ),
-      onTap: () {
-        if (selecting || !_canEdit(e)) {
-          _toggle(e);
-        } else {
-          _open(e);
-        }
-      },
+    final text = Theme.of(context).textTheme;
+    return SoftCard(
+      highlighted: selected,
+      padding: const EdgeInsets.fromLTRB(10, 10, 16, 10),
+      onTap: () => selecting || !_canEdit(e) ? _toggle(e) : _open(e),
       onLongPress: () => _toggle(e),
+      child: Row(
+        children: [
+          Semantics(
+            button: true,
+            label: selected ? 'Deselect ${e.name}' : 'Select ${e.name}',
+            child: GestureDetector(
+              onTap: () => _toggle(e),
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: InitialAvatar(name: e.name, selected: selected),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  e.name,
+                  style: text.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Qty ${qty(e.qty)}',
+                  style: text.bodySmall?.copyWith(color: Colors.black54),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            taka(e.amount),
+            style: text.titleMedium?.copyWith(
+              fontWeight: FontWeight.w800,
+              color: context.style.accent,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _selectionBar(List<Expense> expenses, List<Expense> chosen) {
+    final text = Theme.of(context).textTheme;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        child: SoftCard(
+          padding: const EdgeInsets.fromLTRB(8, 10, 10, 10),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.close_rounded),
+                tooltip: 'Clear selection',
+                onPressed: () => setState(_selected.clear),
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${chosen.length} selected',
+                      style: text.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    if (chosen.length < expenses.length)
+                      GestureDetector(
+                        onTap: () => setState(
+                          () => _selected.addAll(expenses.map((e) => e.id!)),
+                        ),
+                        child: Text(
+                          'Select all',
+                          style: text.labelLarge?.copyWith(
+                            color: context.style.accent,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              GradientButton(
+                label: 'Pay ${taka(totalOf(chosen))}',
+                icon: Icons.check_circle_rounded,
+                onPressed: () => _markPaid(chosen),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

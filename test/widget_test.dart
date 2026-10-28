@@ -49,4 +49,17 @@ void main() {
     expect(csv[2], 'Oil,1,180.5,2026-10-25,Unpaid,,,');
     expect(csv.last, 'TOTAL,,580.5,,,,,');
   });
+
+  test('friendly names and day labels', () {
+    expect(friendlyName('user1.faria@gmail.com'), 'Faria');
+    expect(friendlyName('rahim@gmail.com'), 'Rahim');
+    expect(friendlyName(null), 'Someone');
+    final now = DateTime(2026, 10, 28, 15);
+    expect(dayLabel(DateTime(2026, 10, 28, 9), now), 'Today');
+    expect(dayLabel(DateTime(2026, 10, 27, 23), now), 'Yesterday');
+    expect(dayLabel(DateTime(2026, 10, 25), now), 'Sun, Oct 25');
+    expect(dayLabel(DateTime(2025, 10, 25), now), 'Sat, Oct 25, 2025');
+    expect(timeGreeting(DateTime(2026, 1, 1, 9)), 'Good morning');
+    expect(timeGreeting(DateTime(2026, 1, 1, 20)), 'Good evening');
+  });
 }

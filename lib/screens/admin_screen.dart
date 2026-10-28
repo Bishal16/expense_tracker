@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import '../config.dart';
@@ -9,6 +10,8 @@ import '../models/expense.dart';
 import '../services/csv_export.dart';
 import '../services/expense_repository.dart';
 import '../services/user_repository.dart';
+import '../theme.dart';
+import '../widgets/ui.dart';
 
 /// Admin-only: summary, user approvals, bulk actions and CSV export.
 class AdminScreen extends StatefulWidget {
@@ -59,44 +62,91 @@ class _AdminScreenState extends State<AdminScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Admin panel')),
-      body: StreamBuilder<List<Expense>>(
-        stream: _expenses,
-        builder: (context, expSnap) => StreamBuilder<List<AppUser>>(
-          stream: _users,
-          builder: (context, userSnap) {
-            final error = expSnap.error ?? userSnap.error;
-            if (error != null) return Center(child: Text('Error: $error'));
-            if (!expSnap.hasData || !userSnap.hasData) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            final all = expSnap.data!;
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(12, 4, 12, 32),
-              children: [
-                _section('Summary', _summary(all)),
-                _section('Users', _usersList(userSnap.data!)),
-                _section('Bulk actions', _bulkActions(all)),
-                _section('Export CSV', _export(all)),
-              ],
-            );
-          },
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light,
+      child: GradientBackground(
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          body: StreamBuilder<List<Expense>>(
+            stream: _expenses,
+            builder: (context, expSnap) => StreamBuilder<List<AppUser>>(
+              stream: _users,
+              builder: (context, userSnap) {
+                final error = expSnap.error ?? userSnap.error;
+                final ready = expSnap.hasData && userSnap.hasData;
+                return ListView(
+                  padding: const EdgeInsets.only(bottom: 32),
+                  children: [
+                    const PageHeader(title: 'Admin panel'),
+                    if (error != null)
+                      Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text('Error: $error'),
+                      )
+                    else if (!ready)
+                      const Padding(
+                        padding: EdgeInsets.all(48),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    else
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _section(
+                              'Summary',
+                              Icons.insights_rounded,
+                              _summary(expSnap.data!),
+                            ),
+                            _section(
+                              'Users',
+                              Icons.group_rounded,
+                              _usersList(userSnap.data!),
+                            ),
+                            _section(
+                              'Bulk actions',
+                              Icons.bolt_rounded,
+                              _bulkActions(expSnap.data!),
+                            ),
+                            _section(
+                              'Export CSV',
+                              Icons.file_download_outlined,
+                              _export(expSnap.data!),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
         ),
       ),
     );
   }
 
-  Widget _section(String title, Widget child) => Padding(
-    padding: const EdgeInsets.only(top: 12),
+  Widget _section(String title, IconData icon, Widget child) => Padding(
+    padding: const EdgeInsets.only(top: 20),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
-          child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+          padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+          child: Row(
+            children: [
+              Icon(icon, size: 20, color: context.style.accent),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: Theme.of(context).textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
         ),
-        Card(margin: EdgeInsets.zero, child: child),
+        SoftCard(padding: EdgeInsets.zero, child: child),
       ],
     ),
   );
@@ -164,16 +214,46 @@ class _AdminScreenState extends State<AdminScreen> {
     );
   }
 
-  Widget _stat(String label, double amount, String sub) => Expanded(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: Theme.of(context).textTheme.labelMedium),
-        Text(taka(amount), style: Theme.of(context).textTheme.titleLarge),
-        Text(sub, style: Theme.of(context).textTheme.bodySmall),
-      ],
-    ),
-  );
+  Widget _stat(String label, double amount, String sub) {
+    final style = context.style;
+    final text = Theme.of(context).textTheme;
+    return Expanded(
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 4),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              style.header.first.withValues(alpha: 0.16),
+              style.header.last.withValues(alpha: 0.16),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: text.labelMedium),
+            const SizedBox(height: 4),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                taka(amount),
+                style: text.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: style.accent,
+                ),
+              ),
+            ),
+            Text(sub, style: text.bodySmall?.copyWith(color: Colors.black54)),
+          ],
+        ),
+      ),
+    );
+  }
 
   // ---- Users ----
 

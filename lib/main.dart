@@ -6,41 +6,39 @@ import 'firebase_options.dart';
 import 'screens/access_gate.dart';
 import 'screens/login_screen.dart';
 import 'services/auth_service.dart';
+import 'theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  runApp(const ExpenseTrackerApp());
+  runApp(ExpenseTrackerApp(auth: AuthService()));
 }
 
 class ExpenseTrackerApp extends StatelessWidget {
-  const ExpenseTrackerApp({super.key});
+  final AuthService auth;
+
+  const ExpenseTrackerApp({super.key, required this.auth});
 
   @override
   Widget build(BuildContext context) {
-    final auth = AuthService();
-    return MaterialApp(
-      title: 'Expense Tracker',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(colorSchemeSeed: Colors.indigo, useMaterial3: true),
-      darkTheme: ThemeData(
-        colorSchemeSeed: Colors.indigo,
-        brightness: Brightness.dark,
-        useMaterial3: true,
-      ),
-      home: StreamBuilder<User?>(
-        stream: auth.authStateChanges(),
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
-            return const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
-            );
-          }
-          final user = snap.data;
-          if (user == null) return LoginScreen(auth: auth);
-          return AccessGate(key: ValueKey(user.uid), user: user, auth: auth);
-        },
-      ),
+    // The whole app, including dialogs and pushed pages, takes the signed-in
+    // user's style.
+    return StreamBuilder<User?>(
+      stream: auth.authStateChanges(),
+      builder: (context, snap) {
+        final waiting = snap.connectionState == ConnectionState.waiting;
+        final user = snap.data;
+        return MaterialApp(
+          title: 'Expense Tracker',
+          debugShowCheckedModeBanner: false,
+          theme: AppStyle.forEmail(user?.email).theme,
+          home: waiting
+              ? const Scaffold(body: Center(child: CircularProgressIndicator()))
+              : user == null
+              ? LoginScreen(auth: auth)
+              : AccessGate(key: ValueKey(user.uid), user: user, auth: auth),
+        );
+      },
     );
   }
 }

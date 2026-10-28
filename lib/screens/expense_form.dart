@@ -1,10 +1,13 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import '../format.dart';
 import '../models/expense.dart';
 import '../services/expense_repository.dart';
+import '../theme.dart';
+import '../widgets/ui.dart';
 
 /// Opens the add/edit sheet. Saving, deleting and undoing payment happen here.
 Future<void> showExpenseForm(
@@ -17,7 +20,7 @@ Future<void> showExpenseForm(
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    showDragHandle: true,
+    useSafeArea: true,
     builder: (_) => _ExpenseForm(
       repo: repo,
       user: user,
@@ -50,6 +53,7 @@ class _ExpenseFormState extends State<_ExpenseForm> {
   late final TextEditingController _qty;
   late final TextEditingController _amount;
   late DateTime _date;
+  List<String> _recent = [];
   bool _busy = false;
 
   Expense? get _initial => widget.initial;
@@ -62,12 +66,14 @@ class _ExpenseFormState extends State<_ExpenseForm> {
     _qty = TextEditingController(text: e == null ? '1' : qty(e.qty));
     _amount = TextEditingController(text: e == null ? '' : qty(e.amount));
     _date = e?.date ?? _today();
+    if (e == null) {
+      widget.repo.recentNames().then((n) {
+        if (mounted) setState(() => _recent = n);
+      }, onError: (_) {});
+    }
   }
 
-  static DateTime _today() {
-    final now = DateTime.now();
-    return DateTime(now.year, now.month, now.day);
-  }
+  static DateTime _today() => DateUtils.dateOnly(DateTime.now());
 
   @override
   void dispose() {
@@ -87,17 +93,26 @@ class _ExpenseFormState extends State<_ExpenseForm> {
     if (picked != null) setState(() => _date = picked);
   }
 
+  void _stepQty(int delta) {
+    final current = double.tryParse(_qty.text.trim()) ?? 1;
+    final next = (current + delta).clamp(1, 9999).toDouble();
+    HapticFeedback.selectionClick();
+    setState(() => _qty.text = qty(next));
+  }
+
   /// Runs [action], closes the sheet on success, shows the error otherwise.
-  Future<void> _run(Future<void> Function() action) async {
+  Future<void> _run(Future<void> Function() action, String done) async {
+    final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
       await action();
+      HapticFeedback.mediumImpact();
       if (mounted) Navigator.pop(context);
+      messenger.showSnackBar(SnackBar(content: Text(done)));
     } catch (e) {
       if (mounted) {
         setState(() => _busy = false);
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Failed: $e')));
+        messenger.showSnackBar(SnackBar(content: Text('Failed: $e')));
       }
     }
   }
@@ -111,10 +126,14 @@ class _ExpenseFormState extends State<_ExpenseForm> {
       amount: double.parse(_amount.text.trim()),
       date: _date,
     );
+    final emoji = context.style.emoji;
     _run(
       () => _initial == null
           ? widget.repo.add(e, widget.user.uid, widget.user.email)
           : widget.repo.update(e),
+      _initial == null
+          ? 'Added ${e.name} · ${taka(e.amount)} $emoji'
+          : 'Saved ${e.name}',
     );
   }
 
@@ -122,8 +141,12 @@ class _ExpenseFormState extends State<_ExpenseForm> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.delete_outline_rounded, size: 36),
         title: const Text('Delete expense?'),
-        content: Text('"${_initial!.name}" will be removed for both users.'),
+        content: Text(
+          '“${_initial!.name}” will be removed for both users.',
+          textAlign: TextAlign.center,
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -131,12 +154,21 @@ class _ExpenseFormState extends State<_ExpenseForm> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              minimumSize: const Size(110, 48),
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
             child: const Text('Delete'),
           ),
         ],
       ),
     );
-    if (ok == true) _run(() => widget.repo.delete(_initial!.id!));
+    if (ok == true) {
+      _run(
+        () => widget.repo.delete(_initial!.id!),
+        'Deleted ${_initial!.name}',
+      );
+    }
   }
 
   String? _positiveNumber(String? v, String message) {
@@ -147,7 +179,12 @@ class _ExpenseFormState extends State<_ExpenseForm> {
   @override
   Widget build(BuildContext context) {
     final e = _initial;
-    final isToday = _date == _today();
+    final style = context.style;
+    final text = Theme.of(context).textTheme;
+    final today = _today();
+    final yesterday = today.subtract(const Duration(days: 1));
+    final isOtherDay = _date != today && _date != yesterday;
+
     return Padding(
       padding: EdgeInsets.fromLTRB(
         20,
@@ -162,98 +199,203 @@ class _ExpenseFormState extends State<_ExpenseForm> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                e == null ? 'Add expense' : 'Edit expense',
-                style: Theme.of(context).textTheme.titleLarge,
+                e == null ? 'New expense ${style.emoji}' : 'Edit expense',
+                style: style.playful
+                    ? style.greeting(30).copyWith(color: style.accent)
+                    : text.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
               ),
               if (e != null && e.paid)
                 Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    'Paid ${DateFormat.yMMMd().format(e.paidAt ?? e.date)}'
-                    ' by ${shortName(e.paidBy)}',
-                    style: TextStyle(color: Colors.green.shade700),
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.verified_rounded,
+                        size: 18,
+                        color: Colors.green.shade600,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Paid ${DateFormat.yMMMd().format(e.paidAt ?? e.date)}'
+                        ' by ${shortName(e.paidBy)}',
+                        style: TextStyle(color: Colors.green.shade700),
+                      ),
+                    ],
                   ),
                 ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 18),
+
+              // Amount, big and front and center.
+              TextFormField(
+                controller: _amount,
+                autofocus: e == null,
+                textAlign: TextAlign.center,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                style: text.displaySmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: style.accent,
+                ),
+                decoration: InputDecoration(
+                  hintText: '0',
+                  prefixText: '৳ ',
+                  prefixStyle: text.headlineMedium?.copyWith(
+                    color: style.accent,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  helperText: 'Total taka for this line',
+                  contentPadding: const EdgeInsets.symmetric(vertical: 18),
+                ),
+                validator: (v) => _positiveNumber(v, 'Enter the amount'),
+              ),
+              const SizedBox(height: 14),
+
               TextFormField(
                 controller: _name,
-                autofocus: e == null,
                 textCapitalization: TextCapitalization.sentences,
                 decoration: const InputDecoration(
-                  labelText: 'Name',
-                  border: OutlineInputBorder(),
+                  labelText: 'What was it for?',
+                  prefixIcon: Icon(Icons.shopping_bag_outlined),
                 ),
                 validator: (v) =>
                     (v == null || v.trim().isEmpty) ? 'Enter a name' : null,
               ),
-              const SizedBox(height: 12),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: TextFormField(
-                      controller: _qty,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
+              if (_recent.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                SizedBox(
+                  height: 38,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _recent.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 8),
+                    itemBuilder: (_, i) => ActionChip(
+                      avatar: Icon(
+                        Icons.history_rounded,
+                        size: 16,
+                        color: style.accent,
                       ),
-                      decoration: const InputDecoration(
-                        labelText: 'Qty',
-                        border: OutlineInputBorder(),
-                      ),
-                      validator: (v) => _positiveNumber(v, 'Invalid'),
+                      label: Text(_recent[i]),
+                      onPressed: () {
+                        HapticFeedback.selectionClick();
+                        setState(() => _name.text = _recent[i]);
+                      },
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 3,
+                ),
+              ],
+              const SizedBox(height: 16),
+
+              // Qty stepper.
+              Row(
+                children: [
+                  Text(
+                    'Quantity',
+                    style: text.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton.filledTonal(
+                    onPressed: () => _stepQty(-1),
+                    icon: const Icon(Icons.remove_rounded),
+                    tooltip: 'Less',
+                  ),
+                  SizedBox(
+                    width: 72,
                     child: TextFormField(
-                      controller: _amount,
+                      controller: _qty,
+                      textAlign: TextAlign.center,
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: true,
                       ),
-                      decoration: const InputDecoration(
-                        labelText: 'Taka (total)',
-                        prefixText: '৳ ',
-                        border: OutlineInputBorder(),
+                      style: text.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
                       ),
-                      validator: (v) => _positiveNumber(v, 'Enter taka'),
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        contentPadding: EdgeInsets.symmetric(vertical: 10),
+                      ),
+                      validator: (v) => _positiveNumber(v, '!'),
                     ),
+                  ),
+                  IconButton.filledTonal(
+                    onPressed: () => _stepQty(1),
+                    icon: const Icon(Icons.add_rounded),
+                    tooltip: 'More',
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: _pickDate,
-                icon: const Icon(Icons.calendar_today),
-                label: Text(
-                  isToday
-                      ? 'Today (${DateFormat.yMMMd().format(_date)})'
-                      : DateFormat.yMMMd().format(_date),
-                ),
+              const SizedBox(height: 16),
+
+              // Date: one tap for the usual cases.
+              Text(
+                'Date',
+                style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700),
               ),
-              const SizedBox(height: 20),
-              FilledButton(
-                onPressed: _busy ? null : _save,
-                child: const Text('Save'),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ChoiceChip(
+                    label: const Text('Today'),
+                    selected: _date == today,
+                    onSelected: (_) => setState(() => _date = today),
+                  ),
+                  ChoiceChip(
+                    label: const Text('Yesterday'),
+                    selected: _date == yesterday,
+                    onSelected: (_) => setState(() => _date = yesterday),
+                  ),
+                  ChoiceChip(
+                    avatar: Icon(
+                      Icons.calendar_month_rounded,
+                      size: 18,
+                      color: isOtherDay ? Colors.white : style.accent,
+                    ),
+                    label: Text(
+                      isOtherDay
+                          ? DateFormat.yMMMd().format(_date)
+                          : 'Pick a date',
+                    ),
+                    selected: isOtherDay,
+                    onSelected: (_) => _pickDate(),
+                  ),
+                ],
               ),
-              if (e != null && e.paid && widget.isAdmin)
+              const SizedBox(height: 24),
+
+              GradientButton(
+                label: e == null ? 'Save expense' : 'Save changes',
+                icon: Icons.check_rounded,
+                busy: _busy,
+                onPressed: _save,
+              ),
+              if (e != null && e.paid && widget.isAdmin) ...[
+                const SizedBox(height: 10),
                 OutlinedButton.icon(
                   onPressed: _busy
                       ? null
-                      : () => _run(() => widget.repo.markUnpaid([e.id!])),
-                  icon: const Icon(Icons.undo),
+                      : () => _run(
+                          () => widget.repo.markUnpaid([e.id!]),
+                          '${e.name} moved back to unpaid',
+                        ),
+                  icon: const Icon(Icons.undo_rounded),
                   label: const Text('Mark unpaid'),
                 ),
-              if (e != null)
+              ],
+              if (e != null) ...[
+                const SizedBox(height: 4),
                 TextButton.icon(
                   onPressed: _busy ? null : _delete,
-                  icon: const Icon(Icons.delete_outline),
+                  icon: const Icon(Icons.delete_outline_rounded),
                   label: const Text('Delete'),
                   style: TextButton.styleFrom(
                     foregroundColor: Theme.of(context).colorScheme.error,
                   ),
                 ),
+              ],
             ],
           ),
         ),
