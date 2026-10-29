@@ -1,9 +1,14 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../format.dart' as fmt;
+
 class Expense {
   final String? id;
   final String name;
-  final double qty;
+
+  /// Optional quantity and unit of measure, e.g. 2 + "kg".
+  final double? qty;
+  final String? unit;
 
   /// Line total in taka (not per unit).
   final double amount;
@@ -20,7 +25,8 @@ class Expense {
   const Expense({
     this.id,
     required this.name,
-    required this.qty,
+    this.qty,
+    this.unit,
     required this.amount,
     required this.date,
     this.paid = false,
@@ -36,7 +42,8 @@ class Expense {
     return Expense(
       id: doc.id,
       name: (data['name'] as String?) ?? '',
-      qty: ((data['qty'] as num?) ?? 1).toDouble(),
+      qty: (data['qty'] as num?)?.toDouble(),
+      unit: data['unit'] as String?,
       amount: (data['amount'] as num).toDouble(),
       date: (data['date'] as Timestamp).toDate(),
       paid: (data['paid'] as bool?) ?? false,
@@ -52,9 +59,21 @@ class Expense {
   Map<String, dynamic> toEditableMap() => {
     'name': name,
     'qty': qty,
+    'unit': unit,
     'amount': amount,
     'date': Timestamp.fromDate(date),
   };
+}
+
+/// Units offered in the add form.
+const units = ['kg', 'g', 'litre', 'ml', 'pcs', 'dozen', 'pack', 'box'];
+
+extension ExpenseDetails on Expense {
+  /// "2 kg", "3", "kg" or null when neither is set.
+  String? get qtyLabel {
+    final parts = [if (qty != null) fmt.qty(qty!), ?unit];
+    return parts.isEmpty ? null : parts.join(' ');
+  }
 }
 
 double totalOf(Iterable<Expense> expenses) =>

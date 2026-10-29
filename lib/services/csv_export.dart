@@ -19,11 +19,22 @@ String _cell(Object? v) {
 /// Builds a CSV that opens cleanly in Excel and Google Sheets.
 String expensesToCsv(List<Expense> expenses) {
   final rows = [
-    ['Name', 'Qty', 'Taka', 'Date', 'Status', 'Paid at', 'Paid by', 'Added by'],
+    [
+      'Name',
+      'Qty',
+      'Unit',
+      'Taka',
+      'Date',
+      'Status',
+      'Paid at',
+      'Paid by',
+      'Added by',
+    ],
     for (final e in expenses)
       [
         e.name,
-        qty(e.qty),
+        e.qty == null ? '' : qty(e.qty!),
+        e.unit ?? '',
         qty(e.amount),
         _date.format(e.date),
         e.paid ? 'Paid' : 'Unpaid',
@@ -31,7 +42,7 @@ String expensesToCsv(List<Expense> expenses) {
         e.paidBy ?? '',
         e.createdByEmail ?? '',
       ],
-    ['TOTAL', '', qty(totalOf(expenses)), '', '', '', '', ''],
+    ['TOTAL', '', '', qty(totalOf(expenses)), '', '', '', '', ''],
   ];
   return rows.map((r) => r.map(_cell).join(',')).join('\r\n');
 }

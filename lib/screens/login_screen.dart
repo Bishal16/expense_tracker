@@ -119,7 +119,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               ? 'Admin'
                               : '${friendlyName(a.email)} ${look.emoji}',
                           style: look
-                              .greeting(look.playful ? 24 : 18)
+                              .greeting(18)
                               .copyWith(color: Colors.white),
                         ),
                         Text(

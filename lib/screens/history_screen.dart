@@ -181,7 +181,7 @@ class HistoryScreen extends StatelessWidget {
                 ],
               ),
               borderRadius: BorderRadius.vertical(
-                top: Radius.circular(style.playful ? 24 : 18),
+                top: Radius.circular(style.radius),
               ),
             ),
             child: Row(
@@ -268,7 +268,7 @@ class HistoryScreen extends StatelessWidget {
                 style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700),
               ),
               subtitle: Text(
-                'Qty ${qty(e.qty)} · ${DateFormat.MMMd().format(e.date)}',
+                [?e.qtyLabel, DateFormat.MMMd().format(e.date)].join(' · '),
               ),
               trailing: Text(
                 taka(e.amount),

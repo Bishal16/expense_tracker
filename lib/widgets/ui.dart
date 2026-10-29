@@ -96,7 +96,7 @@ class SoftCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final style = context.style;
-    final radius = BorderRadius.circular(style.playful ? 24 : 18);
+    final radius = BorderRadius.circular(style.radius);
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
       decoration: BoxDecoration(
@@ -296,9 +296,7 @@ class PageHeader extends StatelessWidget {
               const SizedBox(width: 4),
               Text(
                 title,
-                style: context.style
-                    .greeting(context.style.playful ? 30 : 22)
-                    .copyWith(color: Colors.white),
+                style: context.style.greeting(22).copyWith(color: Colors.white),
               ),
             ],
           ),
@@ -327,4 +325,45 @@ class PageHeader extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A titled group of controls: icon + heading above a [SoftCard].
+class Section extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final Widget child;
+  final EdgeInsets padding;
+
+  const Section({
+    super.key,
+    required this.title,
+    required this.icon,
+    required this.child,
+    this.padding = EdgeInsets.zero,
+  });
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: 20),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+          child: Row(
+            children: [
+              Icon(icon, size: 20, color: context.style.accent),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: Theme.of(context).textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
+        ),
+        SoftCard(padding: padding, child: child),
+      ],
+    ),
+  );
 }

@@ -59,7 +59,7 @@ class _AccessGateState extends State<AccessGate> {
           case null:
             return _message(
               Icons.hourglass_top,
-              'Almost there ${AppStyle.forEmail(widget.user.email).emoji}',
+              'Almost there ${context.style.emoji}',
               'Signed in as ${widget.user.email}.\n'
                   'Ask the admin to approve you in the admin panel. '
                   'This screen opens the app automatically once approved.',
@@ -110,9 +110,7 @@ class _AccessGateState extends State<AccessGate> {
                       Text(
                         title,
                         textAlign: TextAlign.center,
-                        style: style
-                            .greeting(style.playful ? 32 : 24)
-                            .copyWith(color: style.accent),
+                        style: style.greeting(26).copyWith(color: style.accent),
                       ),
                       const SizedBox(height: 10),
                       Text(

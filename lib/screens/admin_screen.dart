@@ -127,29 +127,8 @@ class _AdminScreenState extends State<AdminScreen> {
     );
   }
 
-  Widget _section(String title, IconData icon, Widget child) => Padding(
-    padding: const EdgeInsets.only(top: 20),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-          child: Row(
-            children: [
-              Icon(icon, size: 20, color: context.style.accent),
-              const SizedBox(width: 8),
-              Text(
-                title,
-                style: Theme.of(context).textTheme.titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w800),
-              ),
-            ],
-          ),
-        ),
-        SoftCard(padding: EdgeInsets.zero, child: child),
-      ],
-    ),
-  );
+  Widget _section(String title, IconData icon, Widget child) =>
+      Section(title: title, icon: icon, child: child);
 
   // ---- Summary ----
 

@@ -1,71 +1,66 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import 'config.dart';
+import 'fonts.dart';
+import 'models/theme_prefs.dart';
 
-/// Per-user look: colors, gradients and decorative touches.
+/// Per-user look, built from the user's saved [ThemePrefs].
 @immutable
 class AppStyle extends ThemeExtension<AppStyle> {
-  final Color seed;
-  final Color accent;
-  final List<Color> header;
-  final List<Color> background;
-  final Color cardShadow;
-  final IconData motif;
-  final String emoji;
-  final bool playful;
+  final ThemePrefs prefs;
+  final Palette palette;
 
-  const AppStyle({
-    required this.seed,
-    required this.accent,
-    required this.header,
-    required this.background,
-    required this.cardShadow,
-    required this.motif,
-    required this.emoji,
-    required this.playful,
-  });
+  /// Shown in the greeting; null means "work it out from the email".
+  final String? displayName;
 
-  /// Admin: deep navy to teal, crisp and businesslike.
-  static const admin = AppStyle(
-    seed: Color(0xFF1E3A8A),
-    accent: Color(0xFF0F766E),
-    header: [Color(0xFF0F172A), Color(0xFF1E3A8A), Color(0xFF0F766E)],
-    background: [Color(0xFFF8FAFC), Color(0xFFEFF6FF)],
-    cardShadow: Color(0x1A1E3A8A),
-    motif: Icons.insights_rounded,
-    emoji: '💼',
-    playful: false,
-  );
+  const AppStyle._(this.prefs, this.palette, this.displayName);
 
-  /// User 1: blush rose to lavender, soft and friendly.
-  static const blossom = AppStyle(
-    seed: Color(0xFFDB2777),
-    accent: Color(0xFFDB2777),
-    header: [Color(0xFFF9A8D4), Color(0xFFF472B6), Color(0xFFC084FC)],
-    background: [Color(0xFFFFF1F6), Color(0xFFF8F0FF)],
-    cardShadow: Color(0x22DB2777),
-    motif: Icons.local_florist_rounded,
-    emoji: '🌸',
-    playful: true,
-  );
+  factory AppStyle.fromPrefs(ThemePrefs prefs) =>
+      AppStyle._(prefs, Palette.byId(prefs.palette), prefs.displayName);
+
+  /// The signed-in user's style: their saved prefs, or their role's defaults.
+  factory AppStyle.resolve(String? email, ThemePrefs? saved) {
+    if (email == null) return welcome;
+    return AppStyle.fromPrefs(
+      saved ?? ThemePrefs.defaults(admin: isAdminEmail(email)),
+    );
+  }
+
+  /// Default look for [email], e.g. for saved-account cards on the login page.
+  factory AppStyle.forEmail(String? email) => AppStyle.resolve(email, null);
 
   /// Login screen, before we know who is signing in.
-  static const welcome = AppStyle(
-    seed: Color(0xFF6D28D9),
-    accent: Color(0xFF7C3AED),
-    header: [Color(0xFF1E3A8A), Color(0xFF7C3AED), Color(0xFFEC4899)],
-    background: [Color(0xFFF5F3FF), Color(0xFFFFF1F6)],
-    cardShadow: Color(0x1A7C3AED),
-    motif: Icons.account_balance_wallet_rounded,
-    emoji: '✨',
-    playful: false,
+  static final welcome = AppStyle._(
+    const ThemePrefs(
+      palette: 'welcome',
+      bodyFont: 'Manrope',
+      greetingFont: 'Manrope',
+      emoji: '✨',
+      motif: 'insights',
+      radius: 18,
+      textScale: 1,
+      decorations: false,
+    ),
+    const Palette(
+      'welcome',
+      'Welcome',
+      Color(0xFF7C3AED),
+      [Color(0xFF1E3A8A), Color(0xFF7C3AED), Color(0xFFEC4899)],
+      [Color(0xFFF5F3FF), Color(0xFFFFF1F6)],
+    ),
+    null,
   );
 
-  static AppStyle forEmail(String? email) {
-    if (email == null) return welcome;
-    return isAdminEmail(email) ? admin : blossom;
-  }
+  Color get accent => palette.accent;
+  List<Color> get header => palette.header;
+  List<Color> get background => palette.background;
+  Color get cardShadow => accent.withValues(alpha: 0.13);
+  IconData get motif => motifs[prefs.motif] ?? Icons.auto_awesome_rounded;
+  String get emoji => prefs.emoji;
+  double get radius => prefs.radius;
+
+  /// Extra hearts and sweeter wording.
+  bool get playful => prefs.decorations;
 
   LinearGradient get headerGradient => LinearGradient(
     begin: Alignment.topLeft,
@@ -79,18 +74,26 @@ class AppStyle extends ThemeExtension<AppStyle> {
     colors: background,
   );
 
-  /// Display font for big greetings.
-  TextStyle greeting(double size) => playful
-      ? GoogleFonts.dancingScript(fontSize: size, fontWeight: FontWeight.w700)
-      : GoogleFonts.manrope(fontSize: size, fontWeight: FontWeight.w800);
+  /// Display font for greetings and titles. Script fonts are scaled up so
+  /// every choice reads at about the same size.
+  TextStyle greeting(double size) {
+    final font = prefs.greetingFont;
+    final script = greetingFontScale[font];
+    return fontStyle(
+      font,
+      fontSize: size * (script ?? 1),
+      fontWeight: switch (font) {
+        'Manrope' => FontWeight.w800,
+        'Playfair Display' || 'Dancing Script' || 'Caveat' => FontWeight.w700,
+        _ => FontWeight.w400,
+      },
+    );
+  }
 
   ThemeData get theme {
-    final scheme = ColorScheme.fromSeed(seedColor: seed, primary: accent);
+    final scheme = ColorScheme.fromSeed(seedColor: accent, primary: accent);
     final base = ThemeData(colorScheme: scheme, useMaterial3: true);
-    final text = playful
-        ? GoogleFonts.quicksandTextTheme(base.textTheme)
-        : GoogleFonts.manropeTextTheme(base.textTheme);
-    final radius = playful ? 24.0 : 18.0;
+    final text = fontTextTheme(prefs.bodyFont, base.textTheme);
     return base.copyWith(
       textTheme: text,
       scaffoldBackgroundColor: background.first,

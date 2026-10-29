@@ -53,6 +53,7 @@ class _ExpenseFormState extends State<_ExpenseForm> {
   late final TextEditingController _qty;
   late final TextEditingController _amount;
   late DateTime _date;
+  String? _unit;
   List<String> _recent = [];
   bool _busy = false;
 
@@ -63,7 +64,8 @@ class _ExpenseFormState extends State<_ExpenseForm> {
     super.initState();
     final e = _initial;
     _name = TextEditingController(text: e?.name ?? '');
-    _qty = TextEditingController(text: e == null ? '1' : qty(e.qty));
+    _qty = TextEditingController(text: e?.qty == null ? '' : qty(e!.qty!));
+    _unit = e?.unit;
     _amount = TextEditingController(text: e == null ? '' : qty(e.amount));
     _date = e?.date ?? _today();
     if (e == null) {
@@ -94,10 +96,11 @@ class _ExpenseFormState extends State<_ExpenseForm> {
   }
 
   void _stepQty(int delta) {
-    final current = double.tryParse(_qty.text.trim()) ?? 1;
-    final next = (current + delta).clamp(1, 9999).toDouble();
+    final current = double.tryParse(_qty.text.trim()) ?? 0;
+    final next = (current + delta).clamp(0, 9999).toDouble();
     HapticFeedback.selectionClick();
-    setState(() => _qty.text = qty(next));
+    // Stepping down to zero clears the optional quantity.
+    setState(() => _qty.text = next == 0 ? '' : qty(next));
   }
 
   /// Runs [action], closes the sheet on success, shows the error otherwise.
@@ -122,7 +125,8 @@ class _ExpenseFormState extends State<_ExpenseForm> {
     final e = Expense(
       id: _initial?.id,
       name: _name.text.trim(),
-      qty: double.parse(_qty.text.trim()),
+      qty: double.tryParse(_qty.text.trim()),
+      unit: _unit,
       amount: double.parse(_amount.text.trim()),
       date: _date,
     );
@@ -171,6 +175,20 @@ class _ExpenseFormState extends State<_ExpenseForm> {
     }
   }
 
+  Widget _label(String title, TextTheme text, {String hint = 'optional'}) =>
+      Text.rich(
+        TextSpan(
+          text: title,
+          style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+          children: [
+            TextSpan(
+              text: '  ($hint)',
+              style: text.bodySmall?.copyWith(color: Colors.black45),
+            ),
+          ],
+        ),
+      );
+
   String? _positiveNumber(String? v, String message) {
     final n = double.tryParse(v?.trim() ?? '');
     return (n == null || n <= 0) ? message : null;
@@ -200,9 +218,7 @@ class _ExpenseFormState extends State<_ExpenseForm> {
             children: [
               Text(
                 e == null ? 'New expense ${style.emoji}' : 'Edit expense',
-                style: style.playful
-                    ? style.greeting(30).copyWith(color: style.accent)
-                    : text.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+                style: style.greeting(24).copyWith(color: style.accent),
               ),
               if (e != null && e.paid)
                 Padding(
@@ -225,37 +241,12 @@ class _ExpenseFormState extends State<_ExpenseForm> {
                 ),
               const SizedBox(height: 18),
 
-              // Amount, big and front and center.
-              TextFormField(
-                controller: _amount,
-                autofocus: e == null,
-                textAlign: TextAlign.center,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                style: text.displaySmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: style.accent,
-                ),
-                decoration: InputDecoration(
-                  hintText: '0',
-                  prefixText: '৳ ',
-                  prefixStyle: text.headlineMedium?.copyWith(
-                    color: style.accent,
-                    fontWeight: FontWeight.w700,
-                  ),
-                  helperText: 'Total taka for this line',
-                  contentPadding: const EdgeInsets.symmetric(vertical: 18),
-                ),
-                validator: (v) => _positiveNumber(v, 'Enter the amount'),
-              ),
-              const SizedBox(height: 14),
-
               TextFormField(
                 controller: _name,
+                autofocus: e == null,
                 textCapitalization: TextCapitalization.sentences,
                 decoration: const InputDecoration(
-                  labelText: 'What was it for?',
+                  labelText: 'Item name *',
                   prefixIcon: Icon(Icons.shopping_bag_outlined),
                 ),
                 validator: (v) =>
@@ -289,12 +280,7 @@ class _ExpenseFormState extends State<_ExpenseForm> {
               // Qty stepper.
               Row(
                 children: [
-                  Text(
-                    'Quantity',
-                    style: text.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
+                  _label('Quantity', text),
                   const Spacer(),
                   IconButton.filledTonal(
                     onPressed: () => _stepQty(-1),
@@ -314,9 +300,12 @@ class _ExpenseFormState extends State<_ExpenseForm> {
                       ),
                       decoration: const InputDecoration(
                         isDense: true,
+                        hintText: '–',
                         contentPadding: EdgeInsets.symmetric(vertical: 10),
                       ),
-                      validator: (v) => _positiveNumber(v, '!'),
+                      validator: (v) => (v ?? '').trim().isEmpty
+                          ? null
+                          : _positiveNumber(v, '!'),
                     ),
                   ),
                   IconButton.filledTonal(
@@ -326,13 +315,30 @@ class _ExpenseFormState extends State<_ExpenseForm> {
                   ),
                 ],
               ),
+              const SizedBox(height: 14),
+
+              // Unit of measure: tap again to clear.
+              _label('Unit', text),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final u in units)
+                    ChoiceChip(
+                      label: Text(u),
+                      selected: _unit == u,
+                      onSelected: (on) {
+                        HapticFeedback.selectionClick();
+                        setState(() => _unit = on ? u : null);
+                      },
+                    ),
+                ],
+              ),
               const SizedBox(height: 16),
 
               // Date: one tap for the usual cases.
-              Text(
-                'Date',
-                style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-              ),
+              _label('Date', text, hint: 'defaults to today'),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -363,6 +369,33 @@ class _ExpenseFormState extends State<_ExpenseForm> {
                     onSelected: (_) => _pickDate(),
                   ),
                 ],
+              ),
+
+              const SizedBox(height: 20),
+
+              // Price last, big and easy to check before saving.
+              TextFormField(
+                controller: _amount,
+                textAlign: TextAlign.center,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                style: text.displaySmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: style.accent,
+                ),
+                decoration: InputDecoration(
+                  hintText: '0',
+                  prefixText: '৳ ',
+                  prefixStyle: text.headlineMedium?.copyWith(
+                    color: style.accent,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  labelText: 'Price (total) *',
+                  helperText: 'Total taka for this item',
+                  contentPadding: const EdgeInsets.symmetric(vertical: 18),
+                ),
+                validator: (v) => _positiveNumber(v, 'Enter the amount'),
               ),
               const SizedBox(height: 24),
 

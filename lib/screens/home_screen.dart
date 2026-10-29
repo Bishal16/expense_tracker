@@ -12,6 +12,7 @@ import '../widgets/ui.dart';
 import 'admin_screen.dart';
 import 'expense_form.dart';
 import 'history_screen.dart';
+import 'settings_screen.dart';
 
 /// Landing page: unpaid expenses and the total still owed.
 class HomeScreen extends StatefulWidget {
@@ -160,7 +161,9 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _header(AsyncSnapshot<List<Expense>> snap, List<Expense> expenses) {
     final style = context.style;
     final text = Theme.of(context).textTheme;
-    final name = _isAdmin ? 'Admin' : friendlyName(widget.user.email);
+    final name =
+        style.displayName ??
+        (_isAdmin ? 'Admin' : friendlyName(widget.user.email));
     return GradientHeader(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -177,9 +180,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     Text(
                       'Hi, $name ${style.emoji}',
-                      style: style
-                          .greeting(style.playful ? 34 : 26)
-                          .copyWith(color: Colors.white),
+                      style: style.greeting(26).copyWith(color: Colors.white),
                     ),
                   ],
                 ),
@@ -203,9 +204,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               HeaderIconButton(
-                icon: Icons.logout_rounded,
-                tooltip: 'Sign out (${widget.user.email})',
-                onPressed: widget.auth.signOut,
+                icon: Icons.palette_outlined,
+                tooltip: 'Make it yours',
+                onPressed: () =>
+                    _push(SettingsScreen(user: widget.user, auth: widget.auth)),
               ),
             ],
           ),
@@ -393,11 +395,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  'Qty ${qty(e.qty)}',
-                  style: text.bodySmall?.copyWith(color: Colors.black54),
-                ),
+                if (e.qtyLabel != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    e.qtyLabel!,
+                    style: text.bodySmall?.copyWith(color: Colors.black54),
+                  ),
+                ],
               ],
             ),
           ),
